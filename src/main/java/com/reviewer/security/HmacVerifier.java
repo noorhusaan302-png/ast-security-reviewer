@@ -17,6 +17,15 @@ public class HmacVerifier {
     @Value("${github.webhook.secret:}")
     private String webhookSecret;
 
+    public HmacVerifier() {
+        // Spring fills webhookSecret from github.webhook.secret
+    }
+
+    /** Lets tests (or other callers) supply the secret directly. */
+    public HmacVerifier(String webhookSecret) {
+        this.webhookSecret = webhookSecret;
+    }
+
     public boolean isValidSignature(String payload, String signatureHeader) {
         // If no secret is configured in the environment, bypass validation (dev mode)
         if (webhookSecret == null || webhookSecret.isBlank()) {
