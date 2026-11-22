@@ -1,0 +1,61 @@
+name: Survey open-source repos
+
+# Run by hand from the Actions tab. Scans the repositories listed in survey/repos.txt
+# and prints a table of what the two rules flag in each one.
+on:
+  workflow_dispatch:
+
+jobs:
+  survey:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Build the scanner
+        run: mvn -q -B -DskipTests package
+
+      - name: Scan each repository
+        run: |
+          mkdir -p results repos
+          echo "| Repository | Java files | SQL injection | Hardcoded secret | Total |" >> table.md
+          echo "| :--- | ---: | ---: | ---: | ---: |" >> table.md
+          while read -r repo; do
+            [ -z "$repo" ] && continue
+            name="${repo//\//__}"
+            if ! git clone --quiet --depth 1 "https://github.com/$repo" "repos/$name"; then
+              echo "| $repo | clone failed | | | |" >> table.md
+              continue
+            fi
+            # GITHUB_ACTIONS=false keeps the scanner from printing thousands of PR annotations
+            GITHUB_ACTIONS=false java -cp target/ast-reviewer-1.0.0.jar \
+              -Dloader.main=com.reviewer.cli.ScanCli \
+              org.springframework.boot.loader.launch.PropertiesLauncher \
+              "repos/$name" --no-fail > "results/$name.txt" 2>&1 || true
+            files=$(grep -oE "Scanned [0-9]+" "results/$name.txt" | grep -oE "[0-9]+" || echo "?")
+            sql=$(grep -c "\[SQL_INJECTION_RISK\]" "results/$name.txt" || true)
+            sec=$(grep -c "\[HARDCODED_SECRET\]" "results/$name.txt" || true)
+            echo "| $repo | $files | $sql | $sec | $((sql + sec)) |" >> table.md
+            rm -rf "repos/$name"
+          done < survey/repos.txt
+          cat table.md >> "$GITHUB_STEP_SUMMARY"
+          cat table.md
+
+      - name: Show a sample of findings for manual review
+        run: |
+          for f in results/*.txt; do
+            echo "===== $f ====="
+            grep -A1 "\[SQL_INJECTION_RISK\]" "$f" | head -12 || true
+            grep -A1 "\[HARDCODED_SECRET\]" "$f" | head -8 || true
+          done
+
+      - name: Keep the full results
+        uses: actions/upload-artifact@v4
+        with:
+          name: survey-results
+          path: results/
