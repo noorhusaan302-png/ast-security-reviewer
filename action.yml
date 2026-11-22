@@ -1,0 +1,45 @@
+name: AST Security Reviewer
+description: Scan Java code for SQL injection and hardcoded secrets using AST analysis (JavaParser)
+branding:
+  icon: shield
+  color: red
+
+inputs:
+  path:
+    description: File or folder to scan, relative to the repository root
+    default: "."
+  fail-on-findings:
+    description: Fail the job when the scan finds something
+    default: "true"
+  include-tests:
+    description: Also scan test folders (skipped by default)
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Java 21
+      uses: actions/setup-java@v5
+      with:
+        distribution: temurin
+        java-version: "21"
+
+    - name: Build the scanner
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      run: mvn -q -B -DskipTests package
+
+    - name: Scan
+      shell: bash
+      env:
+        SCAN_PATH: ${{ inputs.path }}
+        FAIL_ON_FINDINGS: ${{ inputs.fail-on-findings }}
+        INCLUDE_TESTS: ${{ inputs.include-tests }}
+      run: |
+        ARGS="--github"
+        if [ "$FAIL_ON_FINDINGS" != "true" ]; then ARGS="$ARGS --no-fail"; fi
+        if [ "$INCLUDE_TESTS" = "true" ]; then ARGS="$ARGS --include-tests"; fi
+        java -cp "${{ github.action_path }}/target/ast-reviewer-1.0.0.jar" \
+          -Dloader.main=com.reviewer.cli.ScanCli \
+          org.springframework.boot.loader.launch.PropertiesLauncher \
+          "$SCAN_PATH" $ARGS

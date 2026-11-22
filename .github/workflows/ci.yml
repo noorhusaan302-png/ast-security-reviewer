@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - name: Run unit tests
+        run: mvn -B test
+
+  action:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Scan the vulnerable sample (must be flagged)
+        id: vulnerable
+        uses: ./
+        continue-on-error: true
+        with:
+          path: VulnerableApp.java
+
+      - name: Check that the sample was flagged
+        run: test "${{ steps.vulnerable.outcome }}" = "failure"
+
+      - name: Scan this project's own source (must be clean)
+        uses: ./
+        with:
+          path: src/main

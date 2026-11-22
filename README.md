@@ -14,6 +14,44 @@ No source code is sent to a third-party AI API. Only the flagged snippet goes to
 
 ---
 
+## Use It as a GitHub Action
+
+Add the scanner to any Java repository. It runs on every pull request, needs no AI model, and marks each finding on the exact line in the PR.
+
+Create `.github/workflows/security-scan.yml`:
+
+```yaml
+name: Security scan
+on: [push, pull_request]
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: noorhusaan302-png/ast-security-reviewer@main
+```
+
+| Input | Default | Meaning |
+| :--- | :--- | :--- |
+| `path` | `.` | File or folder to scan |
+| `fail-on-findings` | `true` | Fail the job when something is found |
+| `include-tests` | `false` | Also scan test folders (skipped by default, since test code is full of fake secrets) |
+
+The action sets up Java 21 for its own step, so it also changes the Java version for any later steps in the same job.
+
+You can run the same scan locally:
+
+```bash
+mvn -q -DskipTests package
+java -cp target/ast-reviewer-1.0.0.jar -Dloader.main=com.reviewer.cli.ScanCli \
+  org.springframework.boot.loader.launch.PropertiesLauncher path/to/your/project
+```
+
+The scan only detects. The AI fix suggestions come from the webhook server described below.
+
+---
+
 ## Architectural Flow
 
 ```text
@@ -92,6 +130,8 @@ public User findUser(String username) {
 ast-reviewer/
 ├── src/main/java/com/reviewer/
 │   ├── AstSecurityReviewerApplication.java
+│   ├── cli/
+│   │   └── ScanCli.java                 # Folder scanner used by the GitHub Action
 │   ├── controller/
 │   │   └── WebhookController.java       # POST /api/webhook/github handler
 │   ├── engine/
@@ -108,7 +148,9 @@ ast-reviewer/
 │       ├── HardcodedSecretVisitor.java  # Sensitive variable initializer detector
 │       └── SqlInjectionVisitor.java     # Dynamic SQL concatenation detector
 ├── src/test/java/com/reviewer/
-│   └── AstSecurityReviewerTest.java     # 37-case unit and regression suite
+│   ├── AstSecurityReviewerTest.java     # 37-case unit and regression suite
+│   └── ScanCliTest.java                 # Folder scanner tests
+├── action.yml                           # GitHub Action definition
 ├── Dockerfile                           # Container definition
 ├── docker-compose.yml                   # Service orchestration
 ├── pom.xml                              # Build configuration (Java 21, Spring Boot 3.3.4)
@@ -154,12 +196,13 @@ mvn test
 ```
 
 ```text
-Tests run: 37, Failures: 0, Errors: 0, Skipped: 0
+Tests run: 43, Failures: 0, Errors: 0, Skipped: 0
 BUILD SUCCESS
 ```
 
-The 37 tests cover:
+The 43 tests cover:
 
+- Folder scanning: finding both rules, skipping test folders, skipping files that are not valid Java
 - Dynamic SQL string concatenation detection and false-positive filtering
 - Literal credential assignments against variable-name sets
 - Code-block isolation and AST parse validation in `FixValidator`
