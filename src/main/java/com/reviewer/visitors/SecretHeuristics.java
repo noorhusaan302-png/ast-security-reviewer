@@ -45,6 +45,8 @@ public final class SecretHeuristics {
         "password", "passwd", "secret", "apikey", "token", "accesskey", "privatekey", "credential"
     );
 
+    private static final Set<String> NON_VALUES = Set.of("null", "true", "false", "none", "undefined");
+
     private static final Pattern LETTERS_AND_SEPARATORS = Pattern.compile("^[A-Za-z._\\-:/]+$");
     private static final Pattern KEY_SEGMENT = Pattern.compile("^[A-Za-z][A-Za-z0-9_\\-]{0,23}$");
 
@@ -58,6 +60,9 @@ public final class SecretHeuristics {
 
         // 1. Placeholders that get filled in later: "${DB_PASSWORD}", "{{token}}", "<password>", "****"
         if (isPlaceholder(value)) return true;
+
+        // 1b. Delimiters, literal words and regular expressions
+        if (isSymbolOrPattern(value)) return true;
 
         // 2. Sentences: error messages, descriptions, prompts
         if (value.strip().contains(" ")) return true;
@@ -96,7 +101,18 @@ public final class SecretHeuristics {
         if (v.length() >= 2 && v.startsWith("<") && v.endsWith(">")) return true;
         // "****", "xxxx", "...." : one character repeated
         if (v.length() >= 3 && v.chars().distinct().count() == 1) return true;
+        // "{0}", "%pid" : format arguments
+        if (v.matches("\\{\\d+\\}") || v.startsWith("%")) return true;
         return false;
+    }
+
+    /** Parser tokens, flags and regexes: "$", ":", "=?", "null", "false", "(?i)password=[^;]*" */
+    private static boolean isSymbolOrPattern(String value) {
+        String v = value.strip();
+        if (v.chars().noneMatch(Character::isLetterOrDigit)) return true;       // punctuation only
+        if (NON_VALUES.contains(v.toLowerCase())) return true;
+        return v.startsWith("(?") || v.contains("(.*") || v.contains(".*?") || v.contains("[^")
+                || v.contains("\\");
     }
 
     private static boolean isDottedKey(String value) {
