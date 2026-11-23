@@ -14,6 +14,7 @@ import java.util.regex.Pattern;
  * variable name sounds like a secret (password, apiKey, token...) or because the
  * value itself looks like a key (AWS access key ID, PEM private key).
  * Values loaded at runtime (System.getenv, config lookups) and empty strings are ignored.
+ * So are strings that only name a secret (config keys, header names, messages): see SecretHeuristics.
  */
 public class HardcodedSecretVisitor extends VoidVisitorAdapter<List<Finding>> {
 
@@ -41,7 +42,11 @@ public class HardcodedSecretVisitor extends VoidVisitorAdapter<List<Finding>> {
         boolean suspiciousValue = AWS_ACCESS_KEY.matcher(value).matches()
                 || PRIVATE_KEY_PEM.matcher(value).find();
 
-        if (suspiciousName || suspiciousValue) {
+        // A secret-sounding name is not enough: PASSWORD_KEY = "password" is a config key, not a leak
+        boolean nameOnlyFalseAlarm = !suspiciousValue
+                && SecretHeuristics.looksLikeNameNotSecret(declarator.getNameAsString(), value);
+
+        if ((suspiciousName || suspiciousValue) && !nameOnlyFalseAlarm) {
             int line = declarator.getBegin().map(pos -> pos.line).orElse(-1);
             findings.add(new Finding(
                 "HARDCODED_SECRET",
