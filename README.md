@@ -8,6 +8,30 @@
   <img src="https://img.shields.io/badge/Security-HMAC--SHA256-red?style=for-the-badge" />
 </p>
 
+## Try it in 2 minutes
+
+Scan any Java repo on GitHub for SQL injection and hardcoded secrets. No install, no AI model, free.
+
+1. In your repo, create a file at `.github/workflows/security-scan.yml`
+2. Paste this in and commit:
+
+   ```yaml
+   name: Security scan
+   on: [push, pull_request]
+   jobs:
+     scan:
+       runs-on: ubuntu-latest
+       steps:
+         - uses: actions/checkout@v5
+         - uses: noorhusaan302-png/ast-security-reviewer@v1.1.0
+   ```
+
+3. Open the **Actions** tab. Any finding shows the file, the line and the problem, and it's marked right on your pull request.
+
+Found something wrong, or a false alarm? [Open an issue](https://github.com/noorhusaan302-png/ast-security-reviewer/issues). Feedback helps a lot.
+
+---
+
 An automated static analysis and AI remediation engine for GitHub pull requests. It inspects Java source code with **JavaParser** Abstract Syntax Tree (AST) visitors to detect vulnerabilities deterministically, asks a local LLM (**Qwen 2.5 Coder 1.5B via Ollama**) to suggest a fix, validates that fix, and posts it as an inline review suggestion on the PR.
 
 No source code is sent to a third-party AI API. Only the flagged snippet goes to the local model.
