@@ -53,6 +53,17 @@ public class SecretNoiseTest {
         assertTrue(scan("String password = \"****\";").isEmpty());
     }
 
+    @Test void parserTokensAndFlags_NoFinding() {
+        assertTrue(scan("static final String WILDCARD_TOKEN = \"*\";").isEmpty());
+        assertTrue(scan("static final String NULL_VALUE_TOKEN = \"null\";").isEmpty());
+        assertTrue(scan("static final String DEFAULT_SUPPORTS_CREDENTIALS = \"false\";").isEmpty());
+        assertTrue(scan("static final String LOG_TOKEN_PID = \"%pid\";").isEmpty());
+    }
+
+    @Test void regexThatMentionsSecrets_NoFinding() {
+        assertTrue(scan("static final String FILTER_SECRET = \"(?i)[?&:;]OAuth2Secret=[^;&]*\";").isEmpty());
+    }
+
     // ---------- real secrets must still be reported ----------
 
     @Test void defaultPassword_StillFlagged() {
@@ -62,6 +73,10 @@ public class SecretNoiseTest {
     @Test void weakLiteralPassword_StillFlagged() {
         assertEquals(1, scan("String password = \"admin\";").size());
         assertEquals(1, scan("String password = \"password\";").size());
+    }
+
+    @Test void shortDefaultPassword_StillFlagged() {
+        assertEquals(1, scan("static final String DEFAULT_WRITE_PASSWORD = \"sa\";").size());
     }
 
     @Test void apiKeyConstant_StillFlagged() {
