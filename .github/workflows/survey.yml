@@ -23,6 +23,7 @@ jobs:
       - name: Scan each repository
         run: |
           mkdir -p results repos
+          total_files=0; total_sql=0; total_sec=0
           echo "| Repository | Java files | SQL injection | Hardcoded secret | Total |" >> table.md
           echo "| :--- | ---: | ---: | ---: | ---: |" >> table.md
           while read -r repo; do
@@ -41,10 +42,35 @@ jobs:
             sql=$(grep -c "\[SQL_INJECTION_RISK\]" "results/$name.txt" || true)
             sec=$(grep -c "\[HARDCODED_SECRET\]" "results/$name.txt" || true)
             echo "| $repo | $files | $sql | $sec | $((sql + sec)) |" >> table.md
+            total_files=$((total_files + ${files//[^0-9]/}+0)); total_sql=$((total_sql + sql)); total_sec=$((total_sec + sec))
+            # keep the OWASP Benchmark answer key for the accuracy step
+            cp "repos/$name"/expectedresults-*.csv results/ 2>/dev/null || true
             rm -rf "repos/$name"
           done < survey/repos.txt
+          echo "| **Total** | $total_files | $total_sql | $total_sec | $((total_sql + total_sec)) |" >> table.md
           cat table.md >> "$GITHUB_STEP_SUMMARY"
           cat table.md
+
+      - name: Score the SQL rule against the OWASP Benchmark answer key
+        run: |
+          key=$(ls results/expectedresults-*.csv | head -1)
+          python3 survey/benchmark_score.py results/OWASP-Benchmark__BenchmarkJava.txt "$key" | tee score.md
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          cat score.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: List every hardcoded-secret finding for manual review
+        run: |
+          {
+            echo ""
+            echo "### Hardcoded-secret findings"
+            echo ""
+            echo '```'
+            for f in results/*.txt; do
+              grep -A1 "\[HARDCODED_SECRET\]" "$f" | grep -v "^--$" | paste - - \
+                | sed -E "s#^([^ ]+) +\[HARDCODED_SECRET\][^\t]*\t *#$(basename "$f" .txt) | \1 | #" | cut -c1-230 || true
+            done
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Show a sample of findings for manual review
         run: |
