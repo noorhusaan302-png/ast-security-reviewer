@@ -29,7 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: noorhusaan302-png/ast-security-reviewer@main
+      - uses: noorhusaan302-png/ast-security-reviewer@v1.1.0
 ```
 
 | Input | Default | Meaning |
@@ -49,6 +49,34 @@ java -cp target/ast-reviewer-1.0.0.jar -Dloader.main=com.reviewer.cli.ScanCli \
 ```
 
 The scan only detects. The AI fix suggestions come from the webhook server described below.
+
+---
+
+## How Accurate Is It?
+
+Measured, not guessed. A manual workflow (`.github/workflows/survey.yml`) runs the scanner on 31 open-source Java projects (27,552 files) and on the OWASP Benchmark, which ships an answer key.
+
+**Hardcoded secrets: 83% fewer flags after tuning**
+
+| | Flags across 31 projects |
+| :--- | :--- |
+| v1.0.0 | 156 |
+| v1.1.0 | 27 |
+
+Almost all of the 129 removed flags were names of secrets, not secrets: config keys (`"ssl.key.password"`), header names (`"X-Auth-Token"`), error messages, file paths, placeholders and regexes. In the 29 projects that are not security-training apps, 9 flags remain. Six are real hardcoded values (default passwords and a private key in h2, druid and kafka test fixtures) and three are still false alarms.
+
+**SQL injection: weak on the OWASP Benchmark**
+
+| Measure | Result |
+| :--- | :--- |
+| Real SQL injections caught | 94 of 272 (34.6%) |
+| Safe code wrongly flagged | 76 of 232 (32.8%) |
+| Precision | 55.3% |
+| Benchmark score (caught % minus wrongly flagged %) | +1.8% |
+
+This rule flags string concatenation passed to `execute`, `executeQuery` or `executeUpdate`. It does not track where the data came from, so it cannot tell user input from a constant, and it misses other query APIs. Treat its findings as "look at this line", not as confirmed bugs. Data-flow tracking is the next step.
+
+Reproduce: Actions tab, "Survey open-source repos", Run workflow.
 
 ---
 
@@ -146,10 +174,15 @@ ast-reviewer/
 │   │   └── ReviewService.java           # Review pipeline coordinator
 │   └── visitors/
 │       ├── HardcodedSecretVisitor.java  # Sensitive variable initializer detector
+│       ├── SecretHeuristics.java        # Filters out names of secrets (config keys, headers, messages)
 │       └── SqlInjectionVisitor.java     # Dynamic SQL concatenation detector
 ├── src/test/java/com/reviewer/
 │   ├── AstSecurityReviewerTest.java     # 37-case unit and regression suite
-│   └── ScanCliTest.java                 # Folder scanner tests
+│   ├── ScanCliTest.java                 # Folder scanner tests
+│   └── SecretNoiseTest.java             # False alarms found in the survey
+├── survey/
+│   ├── repos.txt                        # The 31 projects surveyed
+│   └── benchmark_score.py               # Scores the SQL rule against OWASP Benchmark
 ├── action.yml                           # GitHub Action definition
 ├── Dockerfile                           # Container definition
 ├── docker-compose.yml                   # Service orchestration
@@ -196,15 +229,16 @@ mvn test
 ```
 
 ```text
-Tests run: 43, Failures: 0, Errors: 0, Skipped: 0
+Tests run: 57, Failures: 0, Errors: 0, Skipped: 0
 BUILD SUCCESS
 ```
 
-The 43 tests cover:
+The 57 tests cover:
 
 - Folder scanning: finding both rules, skipping test folders, skipping files that are not valid Java
 - Dynamic SQL string concatenation detection and false-positive filtering
 - Literal credential assignments against variable-name sets
+- Secret false alarms from the survey (config keys, headers, messages, paths, regexes) and real secrets that must still be flagged
 - Code-block isolation and AST parse validation in `FixValidator`
 - Valid, invalid, malformed and bypassed HMAC-SHA256 signatures
 
@@ -213,7 +247,7 @@ The 43 tests cover:
 ## Current Scope & Limitations
 
 - **Syntax validation only:** `FixValidator` checks syntax with `StaticJavaParser.parseCompilationUnit()`. It does not do symbol resolution, type resolution or classpath compilation.
-- **Two rules so far:** dynamic SQL concatenation and hardcoded string secrets. Cross-file taint tracking and broader CWE coverage are not implemented.
+- **Two rules so far:** dynamic SQL concatenation and hardcoded string secrets. There is no data-flow or cross-file taint tracking, which is why the SQL rule scores low on the OWASP Benchmark (see above). Broader CWE coverage is not implemented.
 - **Model size:** defaults to `qwen2.5-coder:1.5b` for fast local inference. Complex refactors may need a larger model, and suggestions should be reviewed by a person.
 
 ---
